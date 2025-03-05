@@ -3,7 +3,10 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import random
+import os
 from collections import deque
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Force CPU mode
 
 app = Flask(__name__)
 
