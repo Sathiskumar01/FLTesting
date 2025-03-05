@@ -1,10 +1,16 @@
 const express = require("express");
+const cors = require("cors");
 const fs = require("fs");
 const csv = require("csv-parser");
+const multer = require("multer");
 const tf = require("@tensorflow/tfjs-node");
 
 const app = express();
+app.use(cors()); // ✅ Allow requests from the client
 app.use(express.json());
+
+// Multer setup for file uploads
+const upload = multer({ dest: "uploads/" });
 
 // Load and preprocess dataset
 function loadAndPreprocessDataset(filePath) {
@@ -27,6 +33,7 @@ function loadAndPreprocessDataset(filePath) {
 
 // QoS Calculation
 function calculateQoS(endToEndDelay, packetDeliveryRate, tauT = 90, wD = 0.5, wP = 0.5, pdrThreshold = 0.8) {
+    if (!endToEndDelay || !packetDeliveryRate) return 0; // Prevent errors
     if (endToEndDelay < tauT && packetDeliveryRate > pdrThreshold) {
         return wD * (tauT - endToEndDelay) / tauT + wP * (packetDeliveryRate - pdrThreshold) / pdrThreshold;
     }
@@ -67,7 +74,7 @@ class DQNAgent {
 
 const agent = new DQNAgent(4, 4);
 
-// Train API Route
+// Train API Route (JSON Request)
 app.post("/train", async (req, res) => {
     try {
         const { file_path } = req.body;
@@ -76,6 +83,26 @@ app.post("/train", async (req, res) => {
         }
 
         const dataset = await loadAndPreprocessDataset(file_path);
+
+        // Calculate QoS for each row
+        dataset.forEach(row => {
+            row.QoSScore = calculateQoS(row.EndToEndDelay, row.PacketDeliveryRate);
+        });
+
+        res.json({ qos_scores: dataset.map(row => row.QoSScore) });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Train API Route (File Upload)
+app.post("/upload", upload.single("file"), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: "File is required" });
+        }
+
+        const dataset = await loadAndPreprocessDataset(req.file.path);
 
         // Calculate QoS for each row
         dataset.forEach(row => {
