@@ -4,22 +4,17 @@ const fs = require("fs");
 const csv = require("csv-parser");
 const multer = require("multer");
 const tf = require("@tensorflow/tfjs-node");
-
 const app = express();
-app.use(cors()); // ✅ Allow requests from the client
+app.use(cors()); 
 app.use(express.json());
-
-// Multer setup for file uploads
 const upload = multer({ dest: "uploads/" });
-
-// Load and preprocess dataset
 function loadAndPreprocessDataset(filePath) {
     return new Promise((resolve, reject) => {
         let dataset = [];
         fs.createReadStream(filePath)
             .pipe(csv())
             .on("data", (row) => {
-                delete row["ModulationType"]; // Remove unnecessary column
+                delete row["ModulationType"]; 
                 let processedRow = {};
                 for (let key in row) {
                     processedRow[key] = parseFloat(row[key]) || 0;
@@ -30,8 +25,6 @@ function loadAndPreprocessDataset(filePath) {
             .on("error", (error) => reject(error));
     });
 }
-
-// QoS Calculation
 function calculateQoS(endToEndDelay, packetDeliveryRate, tauT = 90, wD = 0.5, wP = 0.5, pdrThreshold = 0.8) {
     if (!endToEndDelay || !packetDeliveryRate) return 0; // Prevent errors
     if (endToEndDelay < tauT && packetDeliveryRate > pdrThreshold) {
@@ -39,8 +32,6 @@ function calculateQoS(endToEndDelay, packetDeliveryRate, tauT = 90, wD = 0.5, wP
     }
     return 0;
 }
-
-// DQN Agent Class
 class DQNAgent {
     constructor(stateSize, actionSize) {
         this.stateSize = stateSize;
@@ -50,7 +41,6 @@ class DQNAgent {
         this.epsilonDecay = 0.995;
         this.model = this.buildModel();
     }
-
     buildModel() {
         return tf.sequential({
             layers: [
@@ -60,7 +50,6 @@ class DQNAgent {
             ]
         });
     }
-
     async act(state) {
         if (Math.random() <= this.epsilon) {
             return Math.floor(Math.random() * this.actionSize);
@@ -71,50 +60,35 @@ class DQNAgent {
         return action;
     }
 }
-
 const agent = new DQNAgent(4, 4);
-
-// Train API Route (JSON Request)
 app.post("/train", async (req, res) => {
     try {
         const { file_path } = req.body;
         if (!file_path) {
             return res.status(400).json({ error: "File path is required" });
         }
-
         const dataset = await loadAndPreprocessDataset(file_path);
-
-        // Calculate QoS for each row
         dataset.forEach(row => {
             row.QoSScore = calculateQoS(row.EndToEndDelay, row.PacketDeliveryRate);
         });
-
         res.json({ qos_scores: dataset.map(row => row.QoSScore) });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
-
-// Train API Route (File Upload)
 app.post("/upload", upload.single("file"), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: "File is required" });
         }
-
         const dataset = await loadAndPreprocessDataset(req.file.path);
-
-        // Calculate QoS for each row
         dataset.forEach(row => {
             row.QoSScore = calculateQoS(row.EndToEndDelay, row.PacketDeliveryRate);
         });
-
         res.json({ qos_scores: dataset.map(row => row.QoSScore) });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
-
-// Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
